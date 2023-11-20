@@ -24,6 +24,11 @@ local copter_rtl_mode_num = 6
 
 function update() -- this is the loop which periodically runs
   
+  if state == _state_RESET then
+    send_to_gcs(_WARNING, "Script is in the reset state")
+    return update, 4000
+  end
+
   -- If state ON_MISSION
   if state == _state_ON_MISSION then
     -- get mission state
@@ -98,7 +103,7 @@ function update() -- this is the loop which periodically runs
   end
   
   -- state_DESCEND
-  if state == _state_DESCNED then
+  if state == _state_DESCEND then
     -- Check mode is GUIDED
     if not vehicle:get_mode() == copter_guided_mode_num then
       reset("Not GUIDED")
@@ -184,7 +189,7 @@ function vel_xyz(vel_x, vel_y,vel_z)
   target_vel:z(vel_z)
 
   if not (vehicle:set_target_velocity_NED(target_vel)) then
-    gcs:send_text(_WARNING, "Failed to execute velocity command")
+    send_to_gcs(_WARNING, "Failed to execute velocity command")
     -- Should we reset?
   end
 end
