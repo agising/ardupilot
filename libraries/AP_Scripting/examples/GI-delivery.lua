@@ -1,13 +1,13 @@
 -- This script is a test for AP_Mission bindings
 
 local last_mission_index = 0
-local continue_at_index = 1
+local next_drop_index = 2
 local plant_switch_channel = 10
 local plant_switch_high = 1600
 local drop_switch_channel = 7
 local drop_switch_drop = 1900
 local drop_switch_grab = 1100
-local loop_time = 1100
+local loop_time = 1000
 local _INFO = 6
 local _NOTICE = 5
 local _WARNING = 4
@@ -31,17 +31,20 @@ local descend_start_alt = 0
 
 function update() -- this is the loop which periodically runs
   
-  
-  
-  local _mission_index = mission:get_current_nav_index()
-  send_to_gcs(_INFO, string.format("mission index from vehicle is %d", _mission_index))
+  -- local _mission_index = mission:get_current_nav_index()
+  -- send_to_gcs(_INFO, string.format("Mission index from vehicle is %d", _mission_index))
 
 
 
   if state == "RESET" then
-    announce_state_if_new("RESET")
-    -- Grab cargo if not already grabbed
-    SRV_Channels:set_output_pwm_chan(drop_switch_channel, drop_switch_grab)
+    -- To do once every time state is initiated
+    if previous_state ~= "RESET" then
+      announce_state_if_new("RESET")
+      -- Grab cargo if not already grabbed
+      SRV_Channels:set_output_pwm_chan(drop_switch_channel, drop_switch_grab)
+      send_to_gcs(_NOTICE, "Grabbing PL")
+    end
+    
     -- servo.set_output(drop_switch_channel, drop_switch_grab)
     -- get flight mode and mission state, wait for AUTO and mission running
     local flight_mode = vehicle:get_mode()
@@ -51,13 +54,15 @@ function update() -- this is the loop which periodically runs
       last_mission_index = mission:get_current_nav_index()
       state = "ON_MISSION"
     end
-    return update, 1000
+    return update, loop_time
   end
 
   -- If state ON_MISSION
   if state == "ON_MISSION" then
-    announce_state_if_new("ON_MISSION")
-
+    if previous_state ~= "ON_MISSION" then
+      announce_state_if_new("ON_MISSION")
+    end
+   
     -- get mission state
     local mission_state = mission:state()
     -- make sure the mission is running when looking for wp change
@@ -67,36 +72,35 @@ function update() -- this is the loop which periodically runs
       return update, loop_time -- reschedules the loop
     elseif mission_state == mission.MISSION_STOPPED then
       send_to_gcs(_NOTICE, "LUA: Mission stopped")
+      -- This happens when reaching the last wp
+      -- We are mission the last drop off
+      -- what to do more?
       return update, loop_time -- reschedules the loop
     end
 
+    -- Update mission_index
     local mission_index = mission:get_current_nav_index()
 
-
-
-
-
-
-    -- see if we have changed since we last checked
-    if mission_index > 2 and mission_index ~= last_mission_index then
-
-      -- post takeoff
-      if mission:set_current_cmd(continue_at_index) then
-        send_to_gcs(_NOTICE, string.format("LUA: jumped to mission item %d",continue_at_index))
+    -- Look for arriving at altitude after take-off
+    if mission_index == 2 and mission_index ~= last_mission_index then
+      
+      -- Update mission index state
+      last_mission_index = mission_index
+      -- Modify where to go
+      if mission:set_current_cmd(next_drop_index) then
+        send_to_gcs(_NOTICE, string.format("LUA: Going to next drop location: wp%d", next_drop_index))
       else
-        send_to_gcs(_NOTICE, "LUA: mission item jump failed")
+        send_to_gcs(_WARNING, "LUA: Could not set next drop location. Pay attention!")
       end
     end
 
 
-    if mission_index > 3 and mission_index ~= last_mission_index then
-
-
-
-
+    -- If we have arrived to drop wp
+    if mission_index == (next_drop_index + 1) and mission_index ~= last_mission_index then
 
       -- Update mission index state
       last_mission_index = mission_index
+    
       -- we just continued the mission, lets see..
       -- If the switch is set, stop and make a drop. Otherwise just pass
       local plant_switch = rc:get_pwm(plant_switch_channel)
@@ -109,6 +113,8 @@ function update() -- this is the loop which periodically runs
         return update, loop_time
       elseif plant_switch < plant_switch_high then
         send_to_gcs(_NOTICE, string.format("Plant switch not high: %d", plant_switch))
+        -- Skip this drop location, aim for next
+        next_drop_index = mission_index
         return update, loop_time
       end
 
@@ -117,31 +123,30 @@ function update() -- this is the loop which periodically runs
       vehicle:set_mode(_flight_mode_GUIDED)
       stop()
       
-      -- manipulate next wp number
+      -- prepare where next drop is going to be, if there are more dropes planned
       -- num commands includes home so - 1
       local mission_length = mission:num_commands() - 1
-      send_to_gcs(_NOTICE, string.format("mission length is %d and mission index is %d", mission_length, mission_index))
-      if mission_length > mission_index then
-        local jump_to = mission_index + 1
-        -- Try to set mission index
-        continue_at_index = jump_to
-        -- if mission:set_current_cmd(jump_to) then
-        --   gcs:send_text(0, string.format("LUA: jumped to mission item %d",jump_to))
-        -- else
-        --   gcs:send_text(0, "LUA: mission item jump failed")
-        -- end
-      end
+      if mission_length > next_drop_index then
+        next_drop_index = next_drop_index + 1
+        send_to_gcs(_NOTICE, "Planning for an other drop after this one")
+      end     
 
       -- Init thr filter and change state to THR_IDENT
       init_hover_thr_ident()
       state = "THR_IDENT"
-
       return update, loop_time
     end
+
+    -- loop fast to quickly find wp change. No other computations are done.
+    return update, loop_time/4
   end
   
   -- state_THR_IDENT
   if state == "THR_IDENT" then 
+    if previous_state ~= "THR_IDENT" then
+      announce_state_if_new("THR_IDENT")
+    end
+
     -- Build average
     hover_thr = (hover_thr + motors:get_throttle())/2
     thr_ident_loops = thr_ident_loops + 1
@@ -151,7 +156,7 @@ function update() -- this is the loop which periodically runs
       average_thr = hover_thr
       descend_start_alt = get_alt()
       send_to_gcs(_INFO, string.format("Hover throttle identified to %0.1f, start descent", average_thr))
-      send_to_gcs(_INFO, string.format("Starting descent from %0.1f meters", descend_start_alt))
+      send_to_gcs(_INFO, string.format("Starting descent from %0.1f meters", descend_start_alt/100))
       state = "DESCEND"
     end
     -- return quicker in this state
@@ -160,10 +165,14 @@ function update() -- this is the loop which periodically runs
   
   -- state_DESCEND
   if state == "DESCEND" then
-    -- Check mode is GUIDED
+    if previous_state ~= "DESCEND" then
+      announce_state_if_new("DESCEND")
+    end
+
+      -- Check mode is GUIDED
     if not vehicle:get_mode() == _flight_mode_GUIDED then
       send_to_gcs(_WARNING, "Mode is not GUIDED during state DESCEND, Resetting script")
-      state = "RESET"
+      stop()
       return update, loop_time
     end
 
@@ -171,7 +180,7 @@ function update() -- this is the loop which periodically runs
     local thr = motors:get_throttle()
     if thr == nil then
       send_to_gcs(_WARNING, "Could not read throttle, Resetting script")
-      state = "RESET"
+      stop()
       return update, loop_time
     end
 
@@ -192,7 +201,7 @@ function update() -- this is the loop which periodically runs
     
     -- For simulation, look for meters descent
     local alt = get_alt()
-    send_to_gcs(_NOTICE, string.format("Altitude descending %0.1f m", alt/100))
+    send_to_gcs(_NOTICE, string.format("Altitude descending %0.1f m", alt))
     if descend_start_alt - alt > 10 then
       -- We have cargo touch down, drop and RTL and start over
       stop()
@@ -208,7 +217,7 @@ function update() -- this is the loop which periodically runs
     -- No abort condition met, continue descending
     vel_xyz(0, 0, descent_rate)
 
-    return update, loop_time
+    return update, loop_time/2
   end
 
   return update, 1000 -- reschedules the loop
@@ -226,7 +235,7 @@ function reset(mess)
   -- try to send 0 velocity
   stop()
   send_to_gcs(_NOTICE, mess)
-  --state = _state_RESET
+  state = "RESET"
   hover_thr = 100
   average_thr = 99
   thr_ident_loops = 0
@@ -254,7 +263,7 @@ function get_alt()
   -- local _ABOVE_HOME = 1
   -- local _ABOVE_ORIGIN = 2
   -- local _ABOVE_TERRAIN = 3
-  return pos:alt()
+  return pos:alt()/100
 end
 
 -- Send velocity command, will only work in GUIDED mode
