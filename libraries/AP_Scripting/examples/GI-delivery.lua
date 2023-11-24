@@ -74,6 +74,7 @@ function update() -- this is the loop which periodically runs
       send_to_gcs(_NOTICE, "LUA: Mission stopped")
       -- This happens when reaching the last wp
       -- We are mission the last drop off
+      
       -- what to do more?
       return update, loop_time -- reschedules the loop
     end
