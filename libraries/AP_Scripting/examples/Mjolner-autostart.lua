@@ -13,11 +13,11 @@ local _fligth_mode_RTL = 6
 local _flight_mode_POSHOLD = 16
 local _flight_mode_TAKEOFF = 13   -- Mode 13 for plane
 
-local _tune_count_down = "MFT240 L8O4aa"
-local _tune_LAUNCH = "MFT240  L2O5F"
-local _tune_ABORT = "MFT240  L4O1FL1E"
+local _tune_count_down = "L8O4aaO2"   -- "MFT240 L8O4aa"
+local _tune_LAUNCH = "L2O5FO2"        -- "MFT240  L2O5F"
+local _tune_ABORT = "L4O1FL1E"      -- "MFT240  L4O1FL1E"
 
--- Tune timeing parameters
+-- Tune timing parameters
 local to_lt = 50                 -- take_off_loop_time in ms. Keep low to monitor abort
 local tpt = 20 * to_lt            -- Time_Per_Tone - in multiplers of to_lt
 local to_tt = 0                  -- Take_off_total_time - Keep track of total time in takeo_off mode.
@@ -38,9 +38,9 @@ function update() -- this is the loop which periodically runs
     if flight_mode == _flight_mode_TAKEOFF then
       if arming:is_armed() then
         to_tt = 0
-        return takeoff(), to_lt  
+        return takeoff(), to_lt
       end 
-      send_to_gcs(_WARNING, "Not armed, Goto MANUAL, Arm then AUTOTAKEOFF")
+      send_to_gcs(_WARNING, "Not armed, Goto MANUAL, Arm then try TAKEOFF")
       play_tune(_tune_ABORT)
     end
   end
@@ -56,7 +56,7 @@ function takeoff()
   flight_mode = vehicle:get_mode()
   if flight_mode ~= _flight_mode_TAKEOFF then
     -- Take off was aborted
-    send_to_gcs(_NOTICE, "Playing ABORT TUNE")
+    send_to_gcs(_WARNING, "TAKEOFF canceled")
     play_tune(_tune_ABORT)
     -- abort take off and go back monitoring flight modes
     to_tt = 0
