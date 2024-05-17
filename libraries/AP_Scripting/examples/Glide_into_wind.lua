@@ -7,9 +7,9 @@
 
 
 -- Tuning parameters
-local looptime = 400
-local long_looptime = 5000
-local rlim = 300                      -- Absolute roll contribution limit [PWM]
+local looptime = 400            -- Short looptime
+local long_looptime = 5000      -- Long looptime, GLIDE_WIND is not enabled
+local rlim = 300                -- Absolute roll contribution limit [PWM]
 
 -- GCS text levels
 local _INFO = 6
@@ -29,11 +29,7 @@ local mode_TAKEOFF = 13
 local mode_GUIDED = 15
 
 -- Tunes
-local _tune_short_low = "L8O4aaO2"   -- "MFT240 L8O4aa"
-local _tune_long_high = "L2O5FO2"    -- "MFT240  L2O5F"
-local _tune_ABORT = "L4O1FL1E"       -- "MFT240  L4O1FL1E"
-local _tune_glide_warn = "MFT240 L16 cdefgfgfgfg"   --
-local _tune_gw_ms = 1000             -- Glide warning tune length in ms
+local _tune_glide_warn = "MFT240 L16 cdefgfgfgfg"   --  The warning tone played during GLIDE_WIND
 
 -- Mode memory
 local flight_mode = vehicle:get_mode()
