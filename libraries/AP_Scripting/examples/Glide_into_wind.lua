@@ -7,7 +7,7 @@
 
 
 -- Tuning parameters
-local looptime = 400            -- Short looptime
+local looptime = 200            -- Short looptime
 local long_looptime = 5000      -- Long looptime, GLIDE_WIND is not enabled
 local rlim = 300                -- Absolute roll contribution limit [PWM]
 
@@ -159,10 +159,12 @@ function update()
         if error < hdg_ok_lim then
           -- If we have been close to target heading for hdg_ok_t_lim, stop overriding
           if hdg_ok_t > hdg_ok_t_lim then
-            -- Do not override again until link has been recovered
+            -- Reset roll input, send text to gcs
             if override_enable then
+              RC_ROLL:set_override(1500)
               send_to_gcs(_INFO, 'LUA: Gliding into wind, no more steering')
             end
+            -- Do not override again until link has been recovered, set flag to false
             override_enable = false
           else
             hdg_ok_t = hdg_ok_t + looptime
